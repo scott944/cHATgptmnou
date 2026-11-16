@@ -554,8 +554,8 @@ BRACE = {
     "d": (3.0, "tensioned metal straps with stud straps"),
     "e": (2.1, "diagonal timber wall lining or cladding"),
     "g": (3.4, "structural plywood"),
-    "h-A": (6.0, "structural plywood, method A (M12 rods)"),
-    "h-B": (6.4, "structural plywood, method B (close nailing)"),
+    "h-A": (6.4, "structural plywood, method A (M12 rods each end)"),
+    "h-B": (6.0, "structural plywood, method B (no rods)"),
 }
 NOMINAL = {1: 0.45, 2: 0.75}   # kN/m, sheeted one side / two sides (Cl 8.3.6.2)
 
@@ -599,7 +599,10 @@ def cmd_as1684_bracing(a):
           f"= **{f(F,1)} kN** (Cl 8.3.4; pressure from Tables 8.1-8.5)")
     hf = min(2700.0 / a.height, 1.0)
     if hf < 1:
-        p(f"- Wall height {a.height:g} mm: structural capacities x 2700/{a.height:g} = {f(hf,3)}")
+        p(f"- Wall height {a.height:g} mm: structural capacities x 2700/{a.height:g} = {f(hf,3)} (Cl 8.3.6.4, Table 8.19)")
+    if a.jd5:
+        hf *= 0.85
+        p("- JD5 framing (e.g. MGP10): tabulated capacities, which assume JD4, reduced by 15%")
     p()
     table(["Wall", "Type", "Length m", "kN/m", "Capacity kN"])
     struct = 0.0
@@ -627,7 +630,7 @@ def cmd_as1684_bracing(a):
     p(f"- **Total {f(total,1)} kN vs {f(F,1)} kN required -> utilisation {f(u)} ({verdict(u)})**")
     if u > 1:
         p(f"- Shortfall {f(F-total,1)} kN: about {f((F-total)/(BRACE['g'][0]*hf),1)} m more type (g) plywood, "
-          f"or {f((F-total)/(BRACE['h-B'][0]*hf),1)} m of type (h) method B.")
+          f"or {f((F-total)/(BRACE['h-A'][0]*hf),1)} m of type (h) method A.")
     p()
     p("Capacity alone is not compliance. Also check: bracing spread evenly and placed at corners; "
       "maximum spacing between bracing walls at right angles to the wind (Cl 8.3.6.7); minimum panel "
@@ -803,6 +806,7 @@ def main():
     sp.add_argument("--nominal1", type=float, default=0.0, help="m of wall sheeted one side (nominal bracing)")
     sp.add_argument("--nominal2", type=float, default=0.0, help="m of wall sheeted both sides")
     sp.add_argument("--height", type=float, default=2700, help="wall height mm")
+    sp.add_argument("--jd5", action="store_true", help="framing is joint group JD5 (MGP10): capacities x 0.85")
     sp.set_defaults(fn=cmd_as1684_bracing)
 
     sp = sub.add_parser("as1684-tiedown", help="AS 1684.2 uplift force at a tie-down connection")
