@@ -1,0 +1,10 @@
+{
+  "name": "absolute-structural",
+  "version": "0.1.0",
+  "description": "Private plugin for Absolute Drafting: structural member design and house framing checks to Australian Standards (AS 1720.1, AS 1684.2, AS 3600, AS 4100, AS/NZS 1170).",
+  "author": {
+    "name": "Absolute Drafting"
+  },
+  "license": "UNLICENSED",
+  "keywords": ["structural", "australian-standards", "timber", "concrete", "steel"]
+}
