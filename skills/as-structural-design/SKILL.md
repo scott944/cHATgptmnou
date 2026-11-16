@@ -37,11 +37,12 @@ worse than a blank.
 | Task | Read |
 |---|---|
 | Any design - loads, combinations, psi factors, wind class, deflection limits | `references/loads.md` |
-| Timber: joists, bearers, rafters, lintels, posts, studs, glulam, LVL | `references/timber.md` |
+| Timber by calculation: joists, bearers, rafters, lintels, posts, studs, glulam, LVL | `references/timber.md` |
+| House framing by span table, wall bracing, tie-down, framing schedule | `references/as1684.md` |
 | Steel: UB/UC/PFC beams, SHS/RHS posts, lintels, bolts, welds | `references/steel.md` |
 | Concrete: slabs, beams, columns, footings, cover, laps, site class | `references/concrete.md` |
 
-Read `loads.md` plus the one material file. Don't load all four.
+Read `loads.md` plus the one file for the job. Don't load them all.
 
 ## Workflow
 
@@ -75,6 +76,9 @@ ratios. Python 3, no dependencies. Run `python scripts/as_calc.py <command> -h` 
 | `steel-beam` | AS 4100 section class, phi Ms, phi Mb (alpha_m, alpha_s), shear, deflection |
 | `steel-column` | AS 4100 phi Ns, phi Nc about both axes |
 | `rc-beam` | AS 3600 flexure, ku, minimum steel, shear (simplified method); `--slab` for slab strips |
+| `as1684-widths` | AS 1684.2 floor, roof and ceiling load widths for span-table lookup |
+| `as1684-bracing` | AS 1684.2 racking force against bracing wall capacity, one wind direction |
+| `as1684-tiedown` | AS 1684.2 uplift force at a tie-down connection |
 
 ```bash
 # 240x45 MGP10 floor joists at 450 crs, 4.2 m span, 1.5 kPa imposed
@@ -150,4 +154,7 @@ fire-rated structure.
 Deemed-to-satisfy span tables (AS 1684, manufacturers' tables) are often the right answer for
 housing and are quicker and more defensible than a first-principles calc. Offer that route
 when the member falls inside their limits; use first principles when it doesn't, or when
-Scott wants the working.
+Scott wants the working. The AS 1684.2 span tables are not bundled: sizes are read from the
+vault copy or a manufacturer's table, never recalled. For a whole-house framing job, fill in
+`assets/as1684-framing-schedule.md` (member schedule, bracing, tie-down) rather than writing
+separate calcs per member.

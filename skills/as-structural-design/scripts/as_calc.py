@@ -6,6 +6,7 @@ as_calc.py - member checks to Australian Standards (limit states).
   steel-beam  / steel-column    AS 4100:2020
   rc-beam (also slabs, b=1000)  AS 3600:2018
   combos                        AS/NZS 1170.0:2002
+  as1684-widths / -bracing / -tiedown   AS 1684.2 house framing
 
 Units: mm, MPa, kN, kNm, kN/m (line loads), kPa only where stated.
 Output is a markdown calc sheet with clause references and utilisation ratios.
@@ -540,6 +541,119 @@ def cmd_rc_beam(a):
         p()
 
 
+
+# --------------------------------------------------------------------------
+# AS 1684.2 house framing helpers
+# --------------------------------------------------------------------------
+
+# Structural wall bracing capacity kN/m, AS 1684.2 Table 8.18 (see references/as1684.md)
+BRACE = {
+    "a": (0.8, "two diagonally opposed timber or metal angle braces"),
+    "b": (1.5, "tensioned metal straps"),
+    "c": (1.5, "timber and metal angle braces"),
+    "d": (3.0, "tensioned metal straps with stud straps"),
+    "e": (2.1, "diagonal timber wall lining or cladding"),
+    "g": (3.4, "structural plywood"),
+    "h-A": (6.0, "structural plywood, method A (M12 rods)"),
+    "h-B": (6.4, "structural plywood, method B (close nailing)"),
+}
+NOMINAL = {1: 0.45, 2: 0.75}   # kN/m, sheeted one side / two sides (Cl 8.3.6.2)
+
+
+def cmd_as1684_widths(a):
+    header("Load widths for span-table lookup", "AS 1684.2 Section 2.6")
+    table(["Quantity", "Working", "Value mm"])
+    if a.joist_spans:
+        flw = sum(x / 2 for x in a.joist_spans) + a.joist_cantilever
+        row("Floor load width FLW",
+            " + ".join(f"{x:g}/2" for x in a.joist_spans)
+            + (f" + {a.joist_cantilever:g} cantilever" if a.joist_cantilever else ""), f(flw, 0))
+    if a.rafter_span:
+        c = math.cos(math.radians(a.pitch))
+        slope_half = a.rafter_span / 2 / c
+        slope_oh = a.overhang / c
+        row("Roof load width RLW (along the slope)",
+            f"({a.rafter_span:g}/2 + {a.overhang:g}) / cos {a.pitch:g}", f(slope_half + slope_oh, 0))
+        row("Uplift load width ULW (same lengths; check Fig 9.5)",
+            "as RLW", f(slope_half + slope_oh, 0))
+    if a.ceiling_spans:
+        clw = sum(x / 2 for x in a.ceiling_spans)
+        row("Ceiling load width CLW", " + ".join(f"{x:g}/2" for x in a.ceiling_spans), f(clw, 0))
+    p()
+    p("Half-span each side is the simple-span case. Where joists or rafters are continuous over the "
+      "member, or struts/underpurlins change the load path, use the Section 2.6 figure for that "
+      "arrangement - the load width is larger at the internal support.")
+    p()
+
+
+def cmd_as1684_bracing(a):
+    header(f"Wall bracing check - wind direction {a.direction}", "AS 1684.2 Section 8")
+    if a.force is not None:
+        F = a.force
+        p(f"- Racking force supplied: **{f(F,1)} kN**")
+    else:
+        if a.area is None or a.pressure is None:
+            sys.exit("Give --force, or both --area and --pressure")
+        F = a.area * a.pressure
+        p(f"- Racking force = area of elevation x pressure = {a.area:g} m2 x {a.pressure:g} kPa "
+          f"= **{f(F,1)} kN** (Cl 8.3.4; pressure from Tables 8.1-8.5)")
+    hf = min(2700.0 / a.height, 1.0)
+    if hf < 1:
+        p(f"- Wall height {a.height:g} mm: structural capacities x 2700/{a.height:g} = {f(hf,3)}")
+    p()
+    table(["Wall", "Type", "Length m", "kN/m", "Capacity kN"])
+    struct = 0.0
+    for i, w in enumerate(a.wall or [], 1):
+        parts = w.split(":")
+        t, length = parts[0], float(parts[1])
+        if t in BRACE:
+            cap, desc = BRACE[t]
+        else:
+            try:
+                cap, desc = float(t), "capacity supplied (manufacturer / table)"
+            except ValueError:
+                sys.exit(f"Unknown bracing type '{t}'. Use one of {', '.join(BRACE)} or a kN/m number.")
+        c = cap * hf * length
+        struct += c
+        row(f"B{i}", f"({t}) {desc}", f(length), f(cap * hf), f(c, 1))
+    p()
+    nom_raw = NOMINAL[1] * a.nominal1 + NOMINAL[2] * a.nominal2
+    nom = min(nom_raw, 0.5 * F)
+    p(f"- Structural bracing: {f(struct,1)} kN")
+    p(f"- Nominal bracing: {a.nominal1:g} m x 0.45 + {a.nominal2:g} m x 0.75 = {f(nom_raw,1)} kN, "
+      f"counted up to 50% of the racking force -> {f(nom,1)} kN (Cl 8.3.6.2)")
+    total = struct + nom
+    u = F / total if total else float("inf")
+    p(f"- **Total {f(total,1)} kN vs {f(F,1)} kN required -> utilisation {f(u)} ({verdict(u)})**")
+    if u > 1:
+        p(f"- Shortfall {f(F-total,1)} kN: about {f((F-total)/(BRACE['g'][0]*hf),1)} m more type (g) plywood, "
+          f"or {f((F-total)/(BRACE['h-B'][0]*hf),1)} m of type (h) method B.")
+    p()
+    p("Capacity alone is not compliance. Also check: bracing spread evenly and placed at corners; "
+      "maximum spacing between bracing walls at right angles to the wind (Cl 8.3.6.7); minimum panel "
+      "lengths; fixing of the top of each bracing wall to the ceiling/roof diaphragm and the bottom "
+      "to the floor (Tables 8.22-8.24); and subfloor bracing where the floor is on stumps or piers. "
+      "Run the other wind direction separately.")
+    p()
+
+
+def cmd_as1684_tiedown(a):
+    header("Tie-down uplift at a connection", "AS 1684.2 Section 9")
+    area = a.ulw / 1000.0 * a.spacing / 1000.0
+    U = a.pressure * area
+    p(f"- Net uplift pressure {a.pressure:g} kPa (Table 9.5 for the wind class and roof type)")
+    p(f"- Area held down = ULW x spacing = {a.ulw:g} x {a.spacing:g} mm = {f(area)} m2")
+    p(f"- **Uplift force per fixing = {f(U)} kN**")
+    if a.capacity:
+        u = U / a.capacity
+        p(f"- Connector design capacity {a.capacity:g} kN -> utilisation {f(u)} ({verdict(u)})")
+    p()
+    p("Carry the force down: rafter/truss to top plate, top plate to stud, stud to bottom plate, "
+      "bottom plate to floor frame or slab, and into the footing. Each joint needs a fixing with "
+      "at least this capacity for the joint group of the timber (Tables 9.16-9.25), and the "
+      "force grows at openings where the lintel collects several rafters.")
+    p()
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
@@ -669,6 +783,34 @@ def main():
     sp.add_argument("--Mstar", type=float)
     sp.add_argument("--Vstar", type=float)
     sp.set_defaults(fn=cmd_rc_beam)
+
+    sp = sub.add_parser("as1684-widths", help="AS 1684.2 floor / roof / ceiling load widths for table lookup")
+    sp.add_argument("--joist_spans", type=float, nargs="*", help="joist spans either side of the bearer, mm")
+    sp.add_argument("--joist_cantilever", type=float, default=0.0)
+    sp.add_argument("--rafter_span", type=float, help="horizontal rafter or truss span supported, mm")
+    sp.add_argument("--overhang", type=float, default=0.0, help="horizontal eaves overhang mm")
+    sp.add_argument("--pitch", type=float, default=0.0, help="roof pitch degrees")
+    sp.add_argument("--ceiling_spans", type=float, nargs="*", help="ceiling joist spans either side, mm")
+    sp.set_defaults(fn=cmd_as1684_widths)
+
+    sp = sub.add_parser("as1684-bracing", help="AS 1684.2 wall bracing: racking force vs capacity, one direction")
+    sp.add_argument("--direction", default="1", help="label, e.g. 'wind on long side'")
+    sp.add_argument("--area", type=float, help="projected area of elevation m2")
+    sp.add_argument("--pressure", type=float, help="lateral wind pressure kPa from Tables 8.1-8.5")
+    sp.add_argument("--force", type=float, help="racking force kN if already known")
+    sp.add_argument("--wall", action="append",
+                    help="TYPE:LENGTH_m, repeatable. TYPE = a, b, c, d, e, g, h-A, h-B or a kN/m number")
+    sp.add_argument("--nominal1", type=float, default=0.0, help="m of wall sheeted one side (nominal bracing)")
+    sp.add_argument("--nominal2", type=float, default=0.0, help="m of wall sheeted both sides")
+    sp.add_argument("--height", type=float, default=2700, help="wall height mm")
+    sp.set_defaults(fn=cmd_as1684_bracing)
+
+    sp = sub.add_parser("as1684-tiedown", help="AS 1684.2 uplift force at a tie-down connection")
+    sp.add_argument("--pressure", type=float, required=True, help="net uplift pressure kPa (Table 9.5)")
+    sp.add_argument("--ulw", type=float, required=True, help="uplift load width mm")
+    sp.add_argument("--spacing", type=float, required=True, help="fixing spacing mm")
+    sp.add_argument("--capacity", type=float, help="connector design capacity kN")
+    sp.set_defaults(fn=cmd_as1684_tiedown)
 
     a = ap.parse_args()
     a.fn(a)
